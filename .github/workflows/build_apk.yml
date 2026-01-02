@@ -13,8 +13,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build demo APK using Buildozer-Kivy-Apk-Creator
-        uses: wildspider57389928/Buildozer-Kivy-APK_Creator@main
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          project-dir: ./demo
-          command: buildozer android debug
+          python-version: '3.11'
+
+      - name: Install buildozer dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ccache \
+            git \
+            libncurses5 \
+            libffi-dev \
+            libssl-dev \
+            libsqlite3-dev \
+            libtool \
+            m4 \
+            autoconf \
+            automake \
+            pkg-config \
+            bison \
+            openjdk-17-jdk \
+            openjdk-17-jdk-headless
+
+      - name: Install buildozer
+        run: pip install buildozer cython
+
+      - name: Build APK
+        run: |
+          cd ./demo
+          buildozer android debug
+        env:
+          USER: runner
+
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v0.0.${{ github.run_number }}
+          files: ./demo/bin/*.apk
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
