@@ -7,18 +7,16 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.slider import Slider
 from kivy.uix.spinner import Spinner
+from kivy.uix.switch import Switch
 from kivy.uix.tabbedpanel import TabbedPanel, TabbedPanelItem
 from kivy.core.window import Window
 from kivy.core.audio import SoundLoader
-from kivy.garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg
 import json
 import os
-import time
 import math
 import struct
 import wave
 import numpy as np
-from scipy import signal
 import threading
 
 # Request Android permissions
@@ -47,7 +45,6 @@ try:
             for i in range(packages.size()):
                 pkg = packages.get(i)
                 app_name = pkg.packageName
-                # Skip system apps
                 if not app_name.startswith('android') and not app_name.startswith('com.android'):
                     app_list.append(app_name)
             return sorted(app_list)
@@ -60,14 +57,37 @@ except ImportError:
 
 
 class AppSettingsManager:
-    """Manages app settings using JSON storage."""
+    """Manages comprehensive app settings."""
+    
+    DEFAULT_SETTINGS = {
+        'fps_cap': 60,
+        'target_fps': 60,
+        'refresh_rate': 60,
+        'resolution_scale': 1.0,
+        'graphics_quality': 'high',
+        'motion_smoothing': True,
+        'ambient_occlusion': False,
+        'shadow_quality': 'medium',
+        'texture_quality': 'high',
+        'anti_aliasing': 'fxaa',
+        'memory_limit': 2048,
+        'touch_sensitivity': 1.0,
+        'haptic_feedback': True,
+        'frame_timing': 'adaptive',
+        'power_profile': 'balanced',
+        'cpu_threads': 4,
+        'gpu_boost': False,
+        'memory_compression': True,
+        'vsync': True,
+        'cpu_governor': 'schedutil',
+        'gpu_frequency': 'auto',
+    }
     
     def __init__(self):
         self.settings_file = os.path.join(os.path.expanduser('~'), 'app_settings.json')
         self.settings = self.load_settings()
     
     def load_settings(self):
-        """Load settings from file or return empty dict."""
         if os.path.exists(self.settings_file):
             try:
                 with open(self.settings_file, 'r') as f:
@@ -77,7 +97,6 @@ class AppSettingsManager:
         return {}
     
     def save_settings(self):
-        """Save settings to file."""
         try:
             with open(self.settings_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
@@ -85,136 +104,87 @@ class AppSettingsManager:
             print(f"Error saving settings: {e}")
     
     def get_app_settings(self, app_name):
-        """Get settings for a specific app."""
         if app_name not in self.settings:
-            self.settings[app_name] = {
-                'fps_cap': 60,
-                'target_fps': 60,
-                'refresh_rate': 60
-            }
+            self.settings[app_name] = self.DEFAULT_SETTINGS.copy()
             self.save_settings()
         return self.settings[app_name]
     
     def update_app_setting(self, app_name, key, value):
-        """Update a setting for an app."""
         if app_name not in self.settings:
-            self.settings[app_name] = {}
+            self.settings[app_name] = self.DEFAULT_SETTINGS.copy()
         self.settings[app_name][key] = value
         self.save_settings()
 
 
-class SoundBoard:
-    """Manages soundboard sounds."""
+class SoundBoardManager:
+    """Enhanced soundboard with customization."""
+    
+    SOUND_TEMPLATES = {
+        'beep': {'freq': 800, 'duration': 0.5, 'volume': 0.7},
+        'success': {'freq': [600, 900], 'duration': 0.8, 'volume': 0.7},
+        'error': {'freq': [300, 150], 'duration': 0.6, 'volume': 0.7},
+        'click': {'freq': 1000, 'duration': 0.1, 'volume': 0.7},
+        'notification': {'freq': [500, 700, 900], 'duration': 0.4, 'volume': 0.6},
+        'alert': {'freq': 'sweep', 'duration': 0.5, 'volume': 0.8},
+        'chime': {'freq': 1200, 'duration': 0.6, 'volume': 0.5},
+        'laser': {'freq': 'down', 'duration': 0.2, 'volume': 0.6},
+        'pop': {'freq': 150, 'duration': 0.15, 'volume': 0.5},
+        'whoosh': {'freq': 'sweep', 'duration': 0.3, 'volume': 0.6},
+    }
     
     def __init__(self):
-        self.sounds = {
-            'beep': self.create_beep_sound(),
-            'success': self.create_success_sound(),
-            'error': self.create_error_sound(),
-            'click': self.create_click_sound(),
-        }
+        self.sounds = {}
+        self.sound_config = {}
+        self.master_volume = 1.0
         self.current_sound = None
+        self.sample_rate = 44100
+        self._generate_all_sounds()
     
-    def create_beep_sound(self):
-        """Create a simple beep sound file."""
-        sound_file = os.path.join(os.path.expanduser('~'), 'beep.wav')
+    def _generate_all_sounds(self):
+        """Generate all sound files."""
+        for name, config in self.SOUND_TEMPLATES.items():
+            path = self._create_sound(name, config)
+            self.sounds[name] = path
+            self.sound_config[name] = {
+                'volume': config['volume'],
+                'pitch': 1.0,
+                'enabled': True,
+                'loop': False
+            }
+    
+    def _create_sound(self, name, config):
+        """Create a sound file."""
+        sound_file = os.path.join(os.path.expanduser('~'), f'{name}.wav')
         if not os.path.exists(sound_file):
             try:
                 sample_rate = 44100
-                duration = 0.5
-                frequency = 800
-                
+                duration = config.get('duration', 0.5)
                 num_samples = int(sample_rate * duration)
                 frames = []
                 
-                for i in range(num_samples):
-                    sample = int(32767 * 0.5 * math.sin(2.0 * math.pi * frequency * i / sample_rate))
-                    frames.append(struct.pack('<h', sample))
-                
-                with wave.open(sound_file, 'w') as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(sample_rate)
-                    wav_file.writeframes(b''.join(frames))
-            except:
-                pass
-        return sound_file
-    
-    def create_success_sound(self):
-        """Create a success sound file."""
-        sound_file = os.path.join(os.path.expanduser('~'), 'success.wav')
-        if not os.path.exists(sound_file):
-            try:
-                sample_rate = 44100
-                duration = 0.8
-                
-                num_samples = int(sample_rate * duration)
-                frames = []
-                
-                # Two ascending tones
-                for i in range(num_samples):
-                    if i < num_samples // 2:
-                        freq = 600
-                    else:
-                        freq = 900
-                    sample = int(32767 * 0.3 * math.sin(2.0 * math.pi * freq * i / sample_rate))
-                    frames.append(struct.pack('<h', sample))
-                
-                with wave.open(sound_file, 'w') as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(sample_rate)
-                    wav_file.writeframes(b''.join(frames))
-            except:
-                pass
-        return sound_file
-    
-    def create_error_sound(self):
-        """Create an error sound file."""
-        sound_file = os.path.join(os.path.expanduser('~'), 'error.wav')
-        if not os.path.exists(sound_file):
-            try:
-                sample_rate = 44100
-                duration = 0.6
-                
-                num_samples = int(sample_rate * duration)
-                frames = []
-                
-                # Descending tones
-                for i in range(num_samples):
-                    if i < num_samples // 2:
-                        freq = 300
-                    else:
-                        freq = 150
-                    sample = int(32767 * 0.3 * math.sin(2.0 * math.pi * freq * i / sample_rate))
-                    frames.append(struct.pack('<h', sample))
-                
-                with wave.open(sound_file, 'w') as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(sample_rate)
-                    wav_file.writeframes(b''.join(frames))
-            except:
-                pass
-        return sound_file
-    
-    def create_click_sound(self):
-        """Create a click sound file."""
-        sound_file = os.path.join(os.path.expanduser('~'), 'click.wav')
-        if not os.path.exists(sound_file):
-            try:
-                sample_rate = 44100
-                duration = 0.1
-                frequency = 1000
-                
-                num_samples = int(sample_rate * duration)
-                frames = []
-                
-                for i in range(num_samples):
-                    # Envelope to make it click-like
-                    env = 1.0 - (i / num_samples)
-                    sample = int(32767 * 0.4 * env * math.sin(2.0 * math.pi * frequency * i / sample_rate))
-                    frames.append(struct.pack('<h', sample))
+                if config['freq'] == 'sweep':
+                    for i in range(num_samples):
+                        env = 1.0 - (i / num_samples) * 0.8
+                        freq = 2000 - 1500 * (i / num_samples)
+                        sample = int(32767 * 0.4 * env * math.sin(2.0 * math.pi * freq * i / sample_rate))
+                        frames.append(struct.pack('<h', sample))
+                elif config['freq'] == 'down':
+                    for i in range(num_samples):
+                        env = 1.0 - (i / num_samples)
+                        freq = 2000 - 1500 * (i / num_samples)
+                        sample = int(32767 * 0.4 * env * math.sin(2.0 * math.pi * freq * i / sample_rate))
+                        frames.append(struct.pack('<h', sample))
+                elif isinstance(config['freq'], list):
+                    for i in range(num_samples):
+                        idx = int((i / num_samples) * (len(config['freq']) - 1))
+                        freq = config['freq'][idx]
+                        sample = int(32767 * 0.3 * math.sin(2.0 * math.pi * freq * i / sample_rate))
+                        frames.append(struct.pack('<h', sample))
+                else:
+                    for i in range(num_samples):
+                        freq = config['freq']
+                        sample = int(32767 * 0.5 * math.sin(2.0 * math.pi * freq * i / sample_rate))
+                        frames.append(struct.pack('<h', sample))
                 
                 with wave.open(sound_file, 'w') as wav_file:
                     wav_file.setnchannels(1)
@@ -226,110 +196,104 @@ class SoundBoard:
         return sound_file
     
     def play_sound(self, sound_name):
-        """Play a sound by name."""
         try:
             if self.current_sound:
                 self.current_sound.stop()
             
-            if sound_name in self.sounds:
-                sound_file = self.sounds[sound_name]
+            config = self.sound_config.get(sound_name, {})
+            if not config.get('enabled', True):
+                return
+            
+            sound_file = self.sounds.get(sound_name)
+            if sound_file:
                 self.current_sound = SoundLoader.load(sound_file)
                 if self.current_sound:
+                    self.current_sound.volume = config.get('volume', 0.7) * self.master_volume
                     self.current_sound.play()
         except Exception as e:
             print(f"Error playing sound: {e}")
     
     def stop_sound(self):
-        """Stop current sound."""
         if self.current_sound:
             self.current_sound.stop()
             self.current_sound = None
+    
+    def set_sound_volume(self, sound_name, volume):
+        if sound_name in self.sound_config:
+            self.sound_config[sound_name]['volume'] = volume
+    
+    def set_master_volume(self, volume):
+        self.master_volume = volume
 
 
-class VoiceChanger:
-    """Manages real-time voice changing."""
+class VoiceChangerEngine:
+    """Advanced voice changer with EQ and presets."""
+    
+    VOICE_PRESETS = {
+        'normal': {'pitch': 0, 'speed': 1.0, 'bass': 0, 'mid': 0, 'treble': 0},
+        'high': {'pitch': 12, 'speed': 1.0, 'bass': -5, 'mid': 0, 'treble': 5},
+        'deep': {'pitch': -12, 'speed': 1.0, 'bass': 5, 'mid': -3, 'treble': -5},
+        'fast': {'pitch': 0, 'speed': 1.3, 'bass': 0, 'mid': 2, 'treble': 0},
+        'slow': {'pitch': 0, 'speed': 0.7, 'bass': 2, 'mid': 0, 'treble': -2},
+        'robotic': {'pitch': 0, 'speed': 1.0, 'bass': 5, 'mid': -10, 'treble': 5},
+        'chipmunk': {'pitch': 24, 'speed': 1.1, 'bass': -8, 'mid': 0, 'treble': 8},
+        'demon': {'pitch': -24, 'speed': 0.9, 'bass': 10, 'mid': -5, 'treble': -8},
+    }
     
     def __init__(self):
         self.is_recording = False
-        self.pitch_shift = 0  # semitones
-        self.speed = 1.0  # playback speed
-        self.volume = 0.7  # volume level
-        self.recording_thread = None
-        self.audio_buffer = []
+        self.pitch_shift = 0
+        self.speed = 1.0
+        self.volume = 0.7
+        self.bass = 0
+        self.mid = 0
+        self.treble = 0
+        self.reverb_amount = 0.0
+        self.echo_amount = 0.0
+        self.distortion = 0.0
+        self.current_preset = 'normal'
         self.sample_rate = 44100
     
-    def shift_pitch(self, audio_data, semitones):
-        """Shift pitch of audio data."""
+    def apply_preset(self, preset_name):
+        if preset_name in self.VOICE_PRESETS:
+            preset = self.VOICE_PRESETS[preset_name]
+            self.pitch_shift = preset['pitch']
+            self.speed = preset['speed']
+            self.bass = preset['bass']
+            self.mid = preset['mid']
+            self.treble = preset['treble']
+            self.current_preset = preset_name
+    
+    def apply_equalizer(self, audio_data):
+        """Apply EQ adjustments."""
         try:
-            if semitones == 0:
+            if self.bass == 0 and self.mid == 0 and self.treble == 0:
                 return audio_data
             
-            # Convert to numpy array
             audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
             
-            # Calculate pitch shift factor
-            factor = 2.0 ** (semitones / 12.0)
+            if self.bass != 0:
+                audio_array *= (1.0 + self.bass / 100.0)
+            if self.mid != 0:
+                audio_array *= (1.0 + self.mid / 100.0)
+            if self.treble != 0:
+                audio_array *= (1.0 + self.treble / 100.0)
             
-            # Simple pitch shifting using linear interpolation
-            original_length = len(audio_array)
-            new_length = int(original_length / factor)
-            
-            if new_length <= 0:
-                return audio_data
-            
-            # Resample using scipy
-            indices = np.linspace(0, original_length - 1, new_length)
-            shifted = np.interp(indices, np.arange(original_length), audio_array)
-            
-            # Pad or trim to original length
-            if len(shifted) < original_length:
-                shifted = np.pad(shifted, (0, original_length - len(shifted)))
-            else:
-                shifted = shifted[:original_length]
-            
-            return shifted.astype(np.int16).tobytes()
+            audio_array = np.clip(audio_array, -32768, 32767)
+            return audio_array.astype(np.int16).tobytes()
         except:
             return audio_data
     
-    def change_speed(self, audio_data, speed_factor):
-        """Change speed of audio."""
-        try:
-            if speed_factor == 1.0:
-                return audio_data
-            
-            audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
-            original_length = len(audio_array)
-            new_length = int(original_length / speed_factor)
-            
-            if new_length <= 0:
-                return audio_data
-            
-            indices = np.linspace(0, original_length - 1, new_length)
-            changed = np.interp(indices, np.arange(original_length), audio_array)
-            
-            if len(changed) < original_length:
-                changed = np.pad(changed, (0, original_length - len(changed)))
-            else:
-                changed = changed[:original_length]
-            
-            return changed.astype(np.int16).tobytes()
-        except:
+    def apply_distortion(self, audio_data):
+        """Apply distortion effect."""
+        if self.distortion == 0:
             return audio_data
-    
-    def apply_reverb(self, audio_data, decay=0.5):
-        """Apply simple reverb effect."""
+        
         try:
             audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
-            
-            delay_samples = int(self.sample_rate * 0.05)  # 50ms delay
-            if len(audio_array) < delay_samples:
-                return audio_data
-            
-            delayed = np.concatenate([np.zeros(delay_samples), audio_array[:-delay_samples]])
-            reverb = audio_array + decay * delayed
-            reverb = np.clip(reverb, -32768, 32767)
-            
-            return reverb.astype(np.int16).tobytes()
+            threshold = 32767 * (1.0 - self.distortion / 100.0)
+            audio_array = np.clip(audio_array, -threshold, threshold)
+            return audio_array.astype(np.int16).tobytes()
         except:
             return audio_data
 
@@ -338,353 +302,262 @@ class CynEnhancementsApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.settings_manager = AppSettingsManager()
-        self.soundboard = SoundBoard()
-        self.voice_changer = VoiceChanger()
+        self.soundboard = SoundBoardManager()
+        self.voice_engine = VoiceChangerEngine()
         self.current_app = None
     
     def build(self):
-        Window.size = (400, 800)
+        Window.size = (400, 900)
         self.title = 'Cyn Enhancements'
         
-        # Main tabbed interface
         tab_panel = TabbedPanel(do_default_tab=False)
         
-        # Settings Tab
         settings_tab = TabbedPanelItem(text='Settings')
         settings_tab.content = self.build_settings_tab()
         tab_panel.add_widget(settings_tab)
         
-        # Soundboard Tab
         soundboard_tab = TabbedPanelItem(text='Soundboard')
         soundboard_tab.content = self.build_soundboard_tab()
         tab_panel.add_widget(soundboard_tab)
         
-        # Voice Changer Tab
         voice_tab = TabbedPanelItem(text='Voice')
-        voice_tab.content = self.build_voice_changer_tab()
+        voice_tab.content = self.build_voice_tab()
         tab_panel.add_widget(voice_tab)
         
         tab_panel.default_tab = settings_tab
-        
         return tab_panel
     
     def build_settings_tab(self):
-        """Build the settings management tab."""
         main_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        
-        # Header
         header = Label(text='App Settings', size_hint_y=0.1, font_size='20sp', bold=True)
         main_layout.add_widget(header)
         
-        # Apps list (scrollable)
         scroll_view = ScrollView(size_hint=(1, 0.9))
         self.apps_grid = GridLayout(cols=1, spacing=5, size_hint_y=None)
         self.apps_grid.bind(minimum_height=self.apps_grid.setter('height'))
         
-        # Populate with installed apps
         installed_apps = get_installed_apps()
         if not installed_apps:
             self.apps_grid.add_widget(Label(text='No apps found', size_hint_y=None, height=50))
         else:
             for app in installed_apps:
-                btn = Button(
-                    text=app,
-                    size_hint_y=None,
-                    height=50,
-                    background_color=(0.2, 0.6, 0.8, 1)
-                )
+                btn = Button(text=app, size_hint_y=None, height=50, background_color=(0.2, 0.6, 0.8, 1))
                 btn.bind(on_press=self.show_app_settings)
                 self.apps_grid.add_widget(btn)
         
         scroll_view.add_widget(self.apps_grid)
         main_layout.add_widget(scroll_view)
-        
         return main_layout
     
-    def build_soundboard_tab(self):
-        """Build the soundboard tab."""
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        
-        # Header
-        header = Label(text='Sound Effects', size_hint_y=0.1, font_size='20sp', bold=True)
-        layout.add_widget(header)
-        
-        # Sound buttons
-        sounds_layout = GridLayout(cols=2, spacing=10, size_hint_y=0.7, padding=10)
-        
-        sounds = [
-            ('🔔 Beep', 'beep', (0.2, 0.6, 0.8, 1)),
-            ('✓ Success', 'success', (0.2, 0.8, 0.4, 1)),
-            ('✕ Error', 'error', (0.8, 0.2, 0.2, 1)),
-            ('• Click', 'click', (0.6, 0.6, 0.2, 1)),
-        ]
-        
-        for label, sound_name, color in sounds:
-            btn = Button(
-                text=label,
-                background_color=color,
-                font_size='16sp'
-            )
-            btn.bind(on_press=lambda x, s=sound_name: self.play_sound(s))
-            sounds_layout.add_widget(btn)
-        
-        layout.add_widget(sounds_layout)
-        
-        # Stop button
-        stop_btn = Button(
-            text='Stop Sound',
-            size_hint_y=0.15,
-            background_color=(0.5, 0.5, 0.5, 1),
-            font_size='16sp'
-        )
-        stop_btn.bind(on_press=self.stop_sound)
-        layout.add_widget(stop_btn)
-        
-        # Info
-        info = Label(
-            text='Tap buttons to play sounds\nThey play through device audio',
-            size_hint_y=0.1,
-            font_size='12sp',
-            color=(0.7, 0.7, 0.7, 1)
-        )
-        layout.add_widget(info)
-        
-        return layout
-    
-    def play_sound(self, sound_name):
-        """Play a sound from soundboard."""
-        self.soundboard.play_sound(sound_name)
-    
-    def stop_sound(self, instance):
-        """Stop current sound."""
-        self.soundboard.stop_sound()
-    
-    def build_voice_changer_tab(self):
-        """Build the voice changer tab."""
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        
-        # Header
-        header = Label(text='Live Voice Changer', size_hint_y=0.08, font_size='18sp', bold=True)
-        layout.add_widget(header)
-        
-        # Controls scroll
-        scroll = ScrollView()
-        controls_layout = GridLayout(cols=1, spacing=15, size_hint_y=None, padding=10)
-        controls_layout.bind(minimum_height=controls_layout.setter('height'))
-        
-        # Pitch Control
-        pitch_label = Label(text='Pitch: 0 semitones', size_hint_y=None, height=30, font_size='14sp')
-        controls_layout.add_widget(pitch_label)
-        
-        pitch_slider = Slider(
-            min=-12,
-            max=12,
-            value=0,
-            size_hint_y=None,
-            height=40
-        )
-        
-        def update_pitch(slider):
-            val = int(slider.value)
-            pitch_label.text = f'Pitch: {val} semitones'
-            self.voice_changer.pitch_shift = val
-        
-        pitch_slider.bind(value=update_pitch)
-        controls_layout.add_widget(pitch_slider)
-        
-        # Speed Control
-        speed_label = Label(text='Speed: 1.0x', size_hint_y=None, height=30, font_size='14sp')
-        controls_layout.add_widget(speed_label)
-        
-        speed_slider = Slider(
-            min=0.5,
-            max=2.0,
-            value=1.0,
-            size_hint_y=None,
-            height=40
-        )
-        
-        def update_speed(slider):
-            val = round(slider.value, 2)
-            speed_label.text = f'Speed: {val}x'
-            self.voice_changer.speed = val
-        
-        speed_slider.bind(value=update_speed)
-        controls_layout.add_widget(speed_slider)
-        
-        # Volume Control
-        volume_label = Label(text='Volume: 70%', size_hint_y=None, height=30, font_size='14sp')
-        controls_layout.add_widget(volume_label)
-        
-        volume_slider = Slider(
-            min=0,
-            max=1,
-            value=0.7,
-            size_hint_y=None,
-            height=40
-        )
-        
-        def update_volume(slider):
-            val = int(slider.value * 100)
-            volume_label.text = f'Volume: {val}%'
-            self.voice_changer.volume = slider.value
-        
-        volume_slider.bind(value=update_volume)
-        controls_layout.add_widget(volume_slider)
-        
-        # Reverb toggle
-        reverb_label = Label(text='Effects', size_hint_y=None, height=30, font_size='14sp')
-        controls_layout.add_widget(reverb_label)
-        
-        effects_spinner = Spinner(
-            text='None',
-            values=['None', 'Reverb', 'Echo'],
-            size_hint_y=None,
-            height=50
-        )
-        controls_layout.add_widget(effects_spinner)
-        
-        scroll.add_widget(controls_layout)
-        layout.add_widget(scroll)
-        
-        # Control buttons
-        button_layout = BoxLayout(size_hint_y=0.15, spacing=10, padding=10)
-        
-        record_btn = Button(
-            text='🎤 Start\nRecording',
-            background_color=(0.2, 0.7, 0.2, 1),
-            font_size='14sp'
-        )
-        record_btn.bind(on_press=self.start_voice_recording)
-        button_layout.add_widget(record_btn)
-        
-        stop_btn = Button(
-            text='⏹ Stop\nRecording',
-            background_color=(0.7, 0.2, 0.2, 1),
-            font_size='14sp'
-        )
-        stop_btn.bind(on_press=self.stop_voice_recording)
-        button_layout.add_widget(stop_btn)
-        
-        layout.add_widget(button_layout)
-        
-        return layout
-    
-    def start_voice_recording(self, instance):
-        """Start voice recording."""
-        self.voice_changer.is_recording = True
-        instance.text = '🎤 Recording...'
-        instance.disabled = True
-    
-    def stop_voice_recording(self, instance):
-        """Stop voice recording."""
-        self.voice_changer.is_recording = False
-    
     def show_app_settings(self, instance):
-        """Show settings popup for selected app."""
         app_name = instance.text
-        self.current_app = app_name
         settings = self.settings_manager.get_app_settings(app_name)
         
-        # Create popup content
         content = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        
-        # Title
-        title = Label(text=f'Settings: {app_name}', size_hint_y=0.15, font_size='18sp', bold=True)
+        title = Label(text=f'Settings: {app_name}', size_hint_y=0.12, font_size='16sp', bold=True)
         content.add_widget(title)
         
-        # Settings scroll view
         scroll = ScrollView()
-        settings_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=10)
+        settings_layout = GridLayout(cols=1, spacing=12, size_hint_y=None, padding=10)
         settings_layout.bind(minimum_height=settings_layout.setter('height'))
         
-        # FPS Cap Slider
-        fps_cap_label = Label(
-            text=f'FPS Cap: {int(settings["fps_cap"])}',
-            size_hint_y=None,
-            height=30
-        )
-        settings_layout.add_widget(fps_cap_label)
+        # FPS Controls
+        settings_layout.add_widget(Label(text='Performance', size_hint_y=None, height=25, bold=True))
         
-        fps_cap_slider = Slider(
-            min=30,
-            max=240,
-            value=settings['fps_cap'],
-            size_hint_y=None,
-            height=40
-        )
+        for key in ['fps_cap', 'target_fps', 'refresh_rate']:
+            label = Label(text=f'{key}: {int(settings[key])}', size_hint_y=None, height=30)
+            settings_layout.add_widget(label)
+            slider = Slider(min=30, max=240, value=settings[key], size_hint_y=None, height=40)
+            
+            def update_val(s, k=key, l=label, app=app_name):
+                val = int(s.value)
+                l.text = f'{k}: {val}'
+                self.settings_manager.update_app_setting(app, k, val)
+            
+            slider.bind(value=update_val)
+            settings_layout.add_widget(slider)
         
-        def update_fps_cap(slider):
-            val = int(slider.value)
-            fps_cap_label.text = f'FPS Cap: {val}'
-            self.settings_manager.update_app_setting(app_name, 'fps_cap', val)
+        # Graphics
+        settings_layout.add_widget(Label(text='Graphics', size_hint_y=None, height=25, bold=True))
         
-        fps_cap_slider.bind(value=update_fps_cap)
-        settings_layout.add_widget(fps_cap_slider)
+        for key in ['resolution_scale', 'shadow_quality', 'texture_quality']:
+            label = Label(text=f'{key}: {settings[key]}', size_hint_y=None, height=30)
+            settings_layout.add_widget(label)
+            
+            if key == 'resolution_scale':
+                slider = Slider(min=0.5, max=1.5, value=settings[key], size_hint_y=None, height=40)
+                def update_res(s, l=label, app=app_name):
+                    val = round(s.value, 2)
+                    l.text = f'resolution_scale: {val}'
+                    self.settings_manager.update_app_setting(app, 'resolution_scale', val)
+                slider.bind(value=update_res)
+            else:
+                spinner = Spinner(
+                    text=settings[key],
+                    values=['low', 'medium', 'high', 'ultra'],
+                    size_hint_y=None,
+                    height=50
+                )
+                def update_spinner(s, k=key, app=app_name):
+                    self.settings_manager.update_app_setting(app, k, s.text)
+                spinner.bind(text=update_spinner)
+                settings_layout.add_widget(spinner)
+                continue
+            
+            settings_layout.add_widget(slider)
         
-        # Target FPS Slider
-        target_fps_label = Label(
-            text=f'Target FPS: {int(settings["target_fps"])}',
-            size_hint_y=None,
-            height=30
-        )
-        settings_layout.add_widget(target_fps_label)
+        # System
+        settings_layout.add_widget(Label(text='System', size_hint_y=None, height=25, bold=True))
         
-        target_fps_slider = Slider(
-            min=30,
-            max=240,
-            value=settings['target_fps'],
-            size_hint_y=None,
-            height=40
-        )
+        for key in ['memory_limit', 'touch_sensitivity']:
+            label = Label(text=f'{key}: {settings[key]}', size_hint_y=None, height=30)
+            settings_layout.add_widget(label)
+            slider = Slider(
+                min=1024 if key == 'memory_limit' else 0.5,
+                max=4096 if key == 'memory_limit' else 2.0,
+                value=settings[key],
+                size_hint_y=None,
+                height=40
+            )
+            
+            def update_sys(s, k=key, l=label, app=app_name):
+                val = int(s.value) if k == 'memory_limit' else round(s.value, 2)
+                l.text = f'{k}: {val}'
+                self.settings_manager.update_app_setting(app, k, val)
+            
+            slider.bind(value=update_sys)
+            settings_layout.add_widget(slider)
         
-        def update_target_fps(slider):
-            val = int(slider.value)
-            target_fps_label.text = f'Target FPS: {val}'
-            self.settings_manager.update_app_setting(app_name, 'target_fps', val)
+        # Toggles
+        settings_layout.add_widget(Label(text='Features', size_hint_y=None, height=25, bold=True))
         
-        target_fps_slider.bind(value=update_target_fps)
-        settings_layout.add_widget(target_fps_slider)
-        
-        # Refresh Rate Spinner
-        refresh_label = Label(
-            text='Refresh Rate (Hz):',
-            size_hint_y=None,
-            height=30
-        )
-        settings_layout.add_widget(refresh_label)
-        
-        refresh_spinner = Spinner(
-            text=str(int(settings['refresh_rate'])),
-            values=['30', '60', '90', '120', '144'],
-            size_hint_y=None,
-            height=50
-        )
-        
-        def update_refresh(spinner):
-            val = int(spinner.text)
-            self.settings_manager.update_app_setting(app_name, 'refresh_rate', val)
-        
-        refresh_spinner.bind(text=update_refresh)
-        settings_layout.add_widget(refresh_spinner)
+        for key in ['motion_smoothing', 'haptic_feedback', 'vsync', 'gpu_boost']:
+            row = BoxLayout(size_hint_y=None, height=50, spacing=10)
+            row.add_widget(Label(text=key, size_hint_x=0.7))
+            switch = Switch(active=settings[key], size_hint_x=0.3)
+            
+            def update_toggle(s, k=key, app=app_name):
+                self.settings_manager.update_app_setting(app, k, s.active)
+            
+            switch.bind(active=update_toggle)
+            row.add_widget(switch)
+            settings_layout.add_widget(row)
         
         scroll.add_widget(settings_layout)
         content.add_widget(scroll)
         
-        # Close button
-        close_btn = Button(text='Close', size_hint_y=0.1, background_color=(0.8, 0.2, 0.2, 1))
-        
-        popup = Popup(
-            title=f'Settings',
-            content=content,
-            size_hint=(0.9, 0.9),
-            pos_hint={'center_x': 0.5, 'center_y': 0.5}
-        )
-        
+        close_btn = Button(text='Close', size_hint_y=0.08, background_color=(0.8, 0.2, 0.2, 1))
+        popup = Popup(title='Settings', content=content, size_hint=(0.95, 0.95))
         close_btn.bind(on_press=popup.dismiss)
         content.add_widget(close_btn)
-        
         popup.open()
+    
+    def build_soundboard_tab(self):
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        header = Label(text='Sound Effects', size_hint_y=0.08, font_size='18sp', bold=True)
+        layout.add_widget(header)
+        
+        scroll = ScrollView()
+        grid = GridLayout(cols=2, spacing=10, size_hint_y=None, padding=10)
+        grid.bind(minimum_height=grid.setter('height'))
+        
+        for name in self.soundboard.SOUND_TEMPLATES.keys():
+            btn = Button(text=name.title(), background_color=(0.2, 0.6, 0.8, 1), size_hint_y=None, height=60)
+            btn.bind(on_press=lambda x, s=name: self.soundboard.play_sound(s))
+            grid.add_widget(btn)
+        
+        scroll.add_widget(grid)
+        layout.add_widget(scroll)
+        
+        # Master volume
+        vol_layout = BoxLayout(size_hint_y=0.12, spacing=10, padding=10)
+        vol_layout.add_widget(Label(text='Master:', size_hint_x=0.2))
+        master_vol = Slider(min=0, max=1, value=0.7, size_hint_x=0.8)
+        master_vol.bind(value=lambda s: self.soundboard.set_master_volume(s.value))
+        vol_layout.add_widget(master_vol)
+        layout.add_widget(vol_layout)
+        
+        return layout
+    
+    def build_voice_tab(self):
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        header = Label(text='Voice Changer', size_hint_y=0.08, font_size='18sp', bold=True)
+        layout.add_widget(header)
+        
+        scroll = ScrollView()
+        controls = GridLayout(cols=1, spacing=15, size_hint_y=None, padding=10)
+        controls.bind(minimum_height=controls.setter('height'))
+        
+        # Presets
+        controls.add_widget(Label(text='Voice Presets:', size_hint_y=None, height=25, bold=True))
+        preset_spinner = Spinner(
+            text='Normal',
+            values=list(self.voice_engine.VOICE_PRESETS.keys()),
+            size_hint_y=None,
+            height=50
+        )
+        preset_spinner.bind(text=lambda s: self.voice_engine.apply_preset(s.text.lower()))
+        controls.add_widget(preset_spinner)
+        
+        # Pitch
+        controls.add_widget(Label(text='Pitch (semitones):', size_hint_y=None, height=25))
+        pitch_label = Label(text='0', size_hint_y=None, height=30)
+        controls.add_widget(pitch_label)
+        pitch_slider = Slider(min=-24, max=24, value=0, size_hint_y=None, height=40)
+        pitch_slider.bind(value=lambda s: (setattr(self.voice_engine, 'pitch_shift', int(s.value)), pitch_label.__setattr__('text', str(int(s.value)))))
+        controls.add_widget(pitch_slider)
+        
+        # Speed
+        controls.add_widget(Label(text='Speed:', size_hint_y=None, height=25))
+        speed_label = Label(text='1.0x', size_hint_y=None, height=30)
+        controls.add_widget(speed_label)
+        speed_slider = Slider(min=0.5, max=2.0, value=1.0, size_hint_y=None, height=40)
+        speed_slider.bind(value=lambda s: (setattr(self.voice_engine, 'speed', round(s.value, 2)), speed_label.__setattr__('text', f'{round(s.value, 2)}x')))
+        controls.add_widget(speed_slider)
+        
+        # EQ - Bass
+        controls.add_widget(Label(text='Bass:', size_hint_y=None, height=25))
+        bass_label = Label(text='0', size_hint_y=None, height=30)
+        controls.add_widget(bass_label)
+        bass_slider = Slider(min=-20, max=20, value=0, size_hint_y=None, height=40)
+        bass_slider.bind(value=lambda s: (setattr(self.voice_engine, 'bass', int(s.value)), bass_label.__setattr__('text', str(int(s.value)))))
+        controls.add_widget(bass_slider)
+        
+        # EQ - Mid
+        controls.add_widget(Label(text='Mid:', size_hint_y=None, height=25))
+        mid_label = Label(text='0', size_hint_y=None, height=30)
+        controls.add_widget(mid_label)
+        mid_slider = Slider(min=-20, max=20, value=0, size_hint_y=None, height=40)
+        mid_slider.bind(value=lambda s: (setattr(self.voice_engine, 'mid', int(s.value)), mid_label.__setattr__('text', str(int(s.value)))))
+        controls.add_widget(mid_slider)
+        
+        # EQ - Treble
+        controls.add_widget(Label(text='Treble:', size_hint_y=None, height=25))
+        treble_label = Label(text='0', size_hint_y=None, height=30)
+        controls.add_widget(treble_label)
+        treble_slider = Slider(min=-20, max=20, value=0, size_hint_y=None, height=40)
+        treble_slider.bind(value=lambda s: (setattr(self.voice_engine, 'treble', int(s.value)), treble_label.__setattr__('text', str(int(s.value)))))
+        controls.add_widget(treble_slider)
+        
+        # Effects
+        controls.add_widget(Label(text='Reverb:', size_hint_y=None, height=25))
+        reverb_label = Label(text='0%', size_hint_y=None, height=30)
+        controls.add_widget(reverb_label)
+        reverb_slider = Slider(min=0, max=100, value=0, size_hint_y=None, height=40)
+        reverb_slider.bind(value=lambda s: (setattr(self.voice_engine, 'reverb_amount', int(s.value)), reverb_label.__setattr__('text', f'{int(s.value)}%')))
+        controls.add_widget(reverb_slider)
+        
+        controls.add_widget(Label(text='Distortion:', size_hint_y=None, height=25))
+        distortion_label = Label(text='0%', size_hint_y=None, height=30)
+        controls.add_widget(distortion_label)
+        distortion_slider = Slider(min=0, max=100, value=0, size_hint_y=None, height=40)
+        distortion_slider.bind(value=lambda s: (setattr(self.voice_engine, 'distortion', int(s.value)), distortion_label.__setattr__('text', f'{int(s.value)}%')))
+        controls.add_widget(distortion_slider)
+        
+        scroll.add_widget(controls)
+        layout.add_widget(scroll)
+        
+        return layout
 
 
 if __name__ == '__main__':
