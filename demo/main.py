@@ -16,7 +16,7 @@ import os
 import math
 import struct
 import wave
-import numpy as np
+import array
 import threading
 
 # Request Android permissions
@@ -265,35 +265,61 @@ class VoiceChangerEngine:
             self.current_preset = preset_name
     
     def apply_equalizer(self, audio_data):
-        """Apply EQ adjustments."""
+        """Apply EQ adjustments using pure Python."""
         try:
             if self.bass == 0 and self.mid == 0 and self.treble == 0:
                 return audio_data
             
-            audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
+            # Convert bytes to samples
+            audio_array = array.array('h')
+            audio_array.frombytes(audio_data)
             
+            # Apply EQ by scaling amplitude
+            eq_factor = 1.0
             if self.bass != 0:
-                audio_array *= (1.0 + self.bass / 100.0)
+                eq_factor *= (1.0 + self.bass / 100.0)
             if self.mid != 0:
-                audio_array *= (1.0 + self.mid / 100.0)
+                eq_factor *= (1.0 + self.mid / 100.0)
             if self.treble != 0:
-                audio_array *= (1.0 + self.treble / 100.0)
+                eq_factor *= (1.0 + self.treble / 100.0)
             
-            audio_array = np.clip(audio_array, -32768, 32767)
-            return audio_array.astype(np.int16).tobytes()
+            # Apply factor and clamp to int16 range
+            result = array.array('h')
+            for sample in audio_array:
+                scaled = int(sample * eq_factor)
+                # Clamp to int16 range [-32768, 32767]
+                clamped = max(-32768, min(32767, scaled))
+                result.append(clamped)
+            
+            return result.tobytes()
         except:
             return audio_data
     
     def apply_distortion(self, audio_data):
-        """Apply distortion effect."""
+        """Apply distortion effect using pure Python."""
         if self.distortion == 0:
             return audio_data
         
         try:
-            audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
-            threshold = 32767 * (1.0 - self.distortion / 100.0)
-            audio_array = np.clip(audio_array, -threshold, threshold)
-            return audio_array.astype(np.int16).tobytes()
+            # Convert bytes to samples
+            audio_array = array.array('h')
+            audio_array.frombytes(audio_data)
+            
+            # Calculate threshold for distortion
+            threshold = int(32767 * (1.0 - self.distortion / 100.0))
+            
+            # Apply distortion (hard clipping)
+            result = array.array('h')
+            for sample in audio_array:
+                if sample > threshold:
+                    clamped = threshold
+                elif sample < -threshold:
+                    clamped = -threshold
+                else:
+                    clamped = sample
+                result.append(clamped)
+            
+            return result.tobytes()
         except:
             return audio_data
 
