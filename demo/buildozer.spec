@@ -35,6 +35,9 @@ android.ndk = 23b
 # (list) Permissions
 android.permissions = QUERY_ALL_PACKAGES,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
 
+# (bool) Auto-accept SDK licenses for CI/CD
+android.accept_sdk_license = True
+
 # (list) The Android archs to build for
 android.archs = arm64-v8a, armeabi-v7a
 

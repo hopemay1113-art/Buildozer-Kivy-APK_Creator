@@ -50,6 +50,9 @@ jobs:
           buildozer android debug
         env:
           USER: runner
+          ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
+          ANDROID_NDK_ROOT: /home/runner/.buildozer/android/platform/android-ndk
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v1
