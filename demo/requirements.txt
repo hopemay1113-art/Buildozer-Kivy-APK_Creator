@@ -1,2 +1,4 @@
 kivy
 pyjnius
+numpy
+scipy
