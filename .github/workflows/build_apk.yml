@@ -1,0 +1,20 @@
+name: Build_APK_Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-android-demo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build demo APK using Buildozer-Kivy-Apk-Creator
+        uses: wildspider57389928/Buildozer-Kivy-APK_Creator@main
+        with:
+          project-dir: ./demo
+          command: buildozer android debug

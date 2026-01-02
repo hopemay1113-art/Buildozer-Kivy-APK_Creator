@@ -545,4 +545,24 @@ if _name_ == "_main_":
 
 ---
 
+## Demo (included) ✅
+
+I've added a small demo Kivy app in `./demo/` and a sample workflow at `.github/workflows/build_apk.yml` so you can test the Action immediately.
+
+- Demo app files:
+  - `demo/main.py` — minimal Kivy app
+  - `demo/buildozer.spec` — minimal Buildozer configuration (debug build)
+  - `demo/requirements.txt` — specifies `kivy`
+
+- To run the demo on GitHub:
+  1. Push these changes to your repository.
+  2. Go to the **Actions** tab and select **Build_APK_Demo**.
+  3. Click **Run workflow** (the workflow uses `workflow_dispatch`).
+
+The workflow builds a **debug APK** using `buildozer android debug` and uploads it to a GitHub Release with a tag like `v0.0.<run_number>`.
+
+> Note: If you want a signed release APK, update `demo/buildozer.spec` with keystore info and change the build command to `buildozer android release`.
+
+---
+
 🚀 With just one click in GitHub Actions, you can build an Android APK!
