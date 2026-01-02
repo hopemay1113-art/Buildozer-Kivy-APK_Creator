@@ -30,6 +30,7 @@ jobs:
             libssl-dev \
             libsqlite3-dev \
             libtool \
+            libtool-bin \
             m4 \
             autoconf \
             automake \
@@ -39,7 +40,8 @@ jobs:
             openjdk-17-jdk-headless \
             zlib1g-dev \
             libxml2-dev \
-            libxslt1-dev
+            libxslt1-dev \
+            gperf
 
       - name: Install buildozer
         run: pip install buildozer cython
